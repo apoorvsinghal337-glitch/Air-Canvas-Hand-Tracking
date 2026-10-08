@@ -1,66 +1,232 @@
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1">
-  <title>Air Canvas Camera Test</title>
-  <style>
-    body {
-      background: #101827;
-      color: white;
-      text-align: center;
-      font-family: Arial;
-      padding: 20px;
-    }
-    button {
-      padding: 16px 30px;
-      background: #00d4ff;
-      border: none;
-      border-radius: 12px;
-      font-size: 18px;
-    }
-    video {
-      width: 100%;
-      margin-top: 20px;
-      border-radius: 12px;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Air Canvas AI</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;padding:15px;
+  background:#0b1220;color:white;
+  font-family:Arial,sans-serif;text-align:center
+}
+h1{color:#38dfff;margin:12px 0}
+p{color:#aab9d0}
+.controls{
+  display:flex;flex-wrap:wrap;
+  justify-content:center;gap:8px;
+  margin:15px auto
+}
+button{
+  background:#233454;color:white;
+  border:1px solid #526481;
+  border-radius:10px;padding:12px;
+  font-size:14px
+}
+#start{background:#00bcd4;color:#00141a;font-weight:bold}
+.stage{
+  position:relative;
+  width:min(96vw,850px);
+  aspect-ratio:4/3;
+  margin:auto;background:#111827;
+  overflow:hidden;border-radius:15px;
+  border:2px solid #34445c
+}
+video,canvas{
+  position:absolute;inset:0;
+  width:100%;height:100%
+}
+video{transform:scaleX(-1)}
+canvas{pointer-events:none}
+#paint{z-index:1}
+#cursor{z-index:2}
+#status{
+  color:#67e8f9;
+  padding:12px;
+  overflow-wrap:anywhere
+}
+</style>
 </head>
 <body>
-  <h1>Air Canvas Camera Test</h1>
-  <button onclick="startCamera()">
-    Start Camera
-  </button>
-  <p id="status">Ready</p>
-  <video id="video" autoplay playsinline muted></video>
 
-  <script>
-    async function startCamera() {
-      const status = document.getElementById("status");
+<h1>✋ AIR CANVAS AI</h1>
+<p>Draw in the air using your finger</p>
 
-      status.innerText = "Starting camera...";
+<div class="controls">
+  <button id="start">📷 Start Camera</button>
+  <button onclick="setColor('#00e5ff')">Cyan</button>
+  <button onclick="setColor('#ff4081')">Pink</button>
+  <button onclick="setColor('#facc15')">Yellow</button>
+  <button onclick="setColor('#ffffff')">White</button>
+  <button onclick="eraser()">Eraser</button>
+  <button onclick="clearCanvas()">Clear</button>
+  <button onclick="saveImage()">Save PNG</button>
+</div>
 
-      try {
-        const stream =
-          await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user" },
-            audio: false
-          });
+<div class="stage">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="paint" width="800" height="600"></canvas>
+  <canvas id="cursor" width="800" height="600"></canvas>
+</div>
 
-        const video = document.getElementById("video");
-        video.srcObject = stream;
-        await video.play();
+<div id="status">Ready — Press Start Camera</div>
+<p>☝️ One finger = Draw</p>
+<p>✌️ Two fingers = Pause</p>
 
-        status.innerText = "Camera Working!";
-      } catch (error) {
-        status.innerText =
-          "Error: " + error.name + " - " + error.message;
+<script type="module">
+const video=document.getElementById("video");
+const paint=document.getElementById("paint");
+const cursor=document.getElementById("cursor");
+const ctx=paint.getContext("2d");
+const cx=cursor.getContext("2d");
+const status=document.getElementById("status");
+
+let color="#00e5ff";
+let erase=false;
+let previous=null;
+let tracker=null;
+let active=false;
+let lastTime=-1;
+
+window.setColor=(c)=>{
+  color=c;erase=false;previous=null;
+};
+window.eraser=()=>{
+  erase=true;previous=null;
+};
+window.clearCanvas=()=>{
+  ctx.clearRect(0,0,800,600);
+  previous=null;
+};
+window.saveImage=()=>{
+  const out=document.createElement("canvas");
+  out.width=800;out.height=600;
+  const c=out.getContext("2d");
+  c.fillStyle="white";
+  c.fillRect(0,0,800,600);
+  c.drawImage(paint,0,0);
+  const a=document.createElement("a");
+  a.href=out.toDataURL("image/png");
+  a.download="AirCanvas.png";
+  a.click();
+};
+
+document.getElementById("start").onclick=async()=>{
+  const btn=document.getElementById("start");
+  btn.disabled=true;
+
+  try{
+    status.textContent="Starting camera...";
+
+    const stream=await navigator.mediaDevices
+      .getUserMedia({
+        video:{facingMode:"user"},
+        audio:false
+      });
+
+    video.srcObject=stream;
+    await video.play();
+
+    status.textContent="Camera working! Loading AI...";
+
+    const vision=await import(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm"
+    );
+
+    const files=await vision.FilesetResolver
+      .forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm"
+      );
+
+    tracker=await vision.HandLandmarker
+      .createFromOptions(files,{
+        baseOptions:{
+          modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate:"CPU"
+        },
+        runningMode:"VIDEO",
+        numHands:1
+      });
+
+    active=true;
+    status.textContent="AI Ready! Show your hand";
+    btn.textContent="Camera Running";
+    requestAnimationFrame(track);
+
+  }catch(e){
+    status.textContent="ERROR: "+e.message;
+    btn.disabled=false;
+  }
+};
+
+function track(){
+  if(!active)return;
+
+  try{
+    if(video.readyState>=2 &&
+       video.currentTime!==lastTime){
+
+      lastTime=video.currentTime;
+
+      const result=tracker.detectForVideo(
+        video,performance.now()
+      );
+
+      cx.clearRect(0,0,800,600);
+
+      if(result.landmarks.length){
+        const hand=result.landmarks[0];
+
+        const index=hand[8].y<hand[6].y;
+        const middle=hand[12].y<hand[10].y;
+
+        const x=(1-hand[8].x)*800;
+        const y=hand[8].y*600;
+
+        cx.beginPath();
+        cx.arc(x,y,9,0,Math.PI*2);
+        cx.fillStyle="#00ff99";
+        cx.fill();
+
+        if(index&&!middle){
+          if(previous){
+            ctx.save();
+            ctx.globalCompositeOperation=erase
+              ?"destination-out":"source-over";
+            ctx.strokeStyle=color;
+            ctx.lineWidth=erase?35:6;
+            ctx.lineCap="round";
+            ctx.lineJoin="round";
+            ctx.beginPath();
+            ctx.moveTo(previous.x,previous.y);
+            ctx.lineTo(x,y);
+            ctx.stroke();
+            ctx.restore();
+          }
+          previous={x,y};
+          status.textContent=erase
+            ?"Erasing...":"Drawing...";
+        }else{
+          previous=null;
+          status.textContent="Hand detected — Paused";
+        }
+      }else{
+        previous=null;
+        status.textContent="Show your hand";
       }
     }
-  </script>
+  }catch(e){
+    active=false;
+    status.textContent="Tracking ERROR: "+e.message;
+    return;
+  }
+
+  requestAnimationFrame(track);
+}
+</script>
 </body>
 </html>
 
-          
-        
