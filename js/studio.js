@@ -53,6 +53,7 @@ let cursorY = 0;
 let cursorReady = false;
 
 let menuOpen = false;
+let menuPage = "main";
 let menuLocked = false;
 let lastMenuClose = 0;
 let palmReady = false;
