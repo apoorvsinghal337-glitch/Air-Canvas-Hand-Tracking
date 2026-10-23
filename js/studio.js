@@ -465,6 +465,9 @@ function saveGallery() {
   } catch (error) {
     status("Gallery unavailable. Use Save PNG.");
   }
+}
+
+// PART 2 CONTINUES BELOW
 
 // ============================================
 // PART 2 OF 3
@@ -971,6 +974,8 @@ function handleMenuSelection(
     selectTool(key);
   }
 }
+
+// PART 3 CONTINUES BELOW
 
 // ============================================
 // PART 3 OF 3
@@ -1588,6 +1593,3 @@ status(
 // ============================================
 
 })();
-
-
-
